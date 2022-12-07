@@ -19,6 +19,7 @@ from .dataloader import get_loader
 from .radar_loader import radar_preprocessing
 from .gan import Discriminator
 
+
 class CrossEntropyLoss2d(torch.nn.Module):
     def __init__(self, weight=None):
         super(CrossEntropyLoss2d, self).__init__()
@@ -156,6 +157,12 @@ def train(gpuid=0,
     device = torch.device('cpu') if gpuid < 0 else torch.device(f'cuda:{gpuid}')
     model = compile_model(grid_conf, data_aug_conf, outC=2)  # confidence + height
     #######################################
+    if resume:
+        state_dict = torch.load('./pths/model.pth')['model_state_dict']
+        model.load_state_dict(state_dict)
+    elif pre_train:
+        state_dict = torch.load('./pths/pretrain.pth')['model_state_dict']
+        model.load_state_dict(state_dict)
     if multi_gpu:
         model = torch.nn.DataParallel(model).cuda(gpuid)
     else:
@@ -172,40 +179,18 @@ def train(gpuid=0,
     if lr_policy == 'plateau':
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min',
                                                                factor=0.7,
-                                                               threshold=0.00001,
+                                                               threshold=0.000001,
                                                                patience=30)
 
     if lr_policy == 'step':
         scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=100, gamma=0.5)
 
     epoch = 0
-    if pre_train:
-        state_dict = torch.load('./exp/pretrain.pt')
-        if multi_gpu:
-            model.load_state_dict(state_dict)
-        else:
-            new_state_dict = OrderedDict()
-            for k, v in state_dict.items():  # k为module.xxx.weight, v为权重
-                name = k[7:]  # 截取`module.`后面的xxx.weight
-                new_state_dict[name] = v
-            # load params
-            model.load_state_dict(new_state_dict)
     if resume:
-        checkpoint = torch.load('./exp/fine_tune_background/model-300.pth')
-        state_dict = checkpoint['model_state_dict']
+        checkpoint = torch.load('./pths/model.pth')
         opt.load_state_dict(checkpoint['opt_state_dict'])
         epoch = checkpoint['epoch']
-        if multi_gpu:
-            model.load_state_dict(state_dict)
-        else:
-            new_state_dict = OrderedDict()
-            for k, v in state_dict.items():  # k为module.xxx.weight, v为权重
-                name = k[7:]  # 截取`module.`后面的xxx.weight
-                new_state_dict[name] = v
-            # load params
-            model.load_state_dict(new_state_dict)
 
-    loss_bce = torch.nn.BCEWithLogitsLoss().cuda(gpuid)
     l_mse = MSELoss().cuda(gpuid)
 
     writer = SummaryWriter(logdir=logdir)
@@ -239,8 +224,14 @@ def train(gpuid=0,
             l_fg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], objs[:, 0])
             l_ht = l_mse(preds[:, 2:3] * fovs, lidHts * fovs)
             l_dp = l_mse(dis[:, 0:1] / 75, depths)
+
+            # argmax does not have a grad_fn
+            # -> softmax
+            pred_bg = torch.nn.functional.softmax(preds[:, 0:2], dim=1)
+            l_bg2 = 0.3 * l_mse((pred_bg[:, 1:2] - pred_bg[:, 0:1]) * fovs, lidars * fovs)
             # loss = l_bg + l_fg + l_ht + l_dp
-            loss = l_bg
+            loss = l_bg + l_bg2 + l_fg
+
             # AverageMeter()
             bg_loss.update(l_bg.item(), imgs.size(0))
             fg_loss.update(l_fg.item(), imgs.size(0))
@@ -257,7 +248,7 @@ def train(gpuid=0,
 
             if counter % 10 == 0:
                 print(f'epoch-{epoch:3d}|{counter}, '
-                      f'l_bg:{bg_loss.avg:.4f}, l_fg:{fg_loss.avg:.4f}, '
+                      f'l_bg:{bg_loss.avg:.4f}, bg2:{l_bg2:.4f}, l_fg:{fg_loss.avg:.4f}, '
                       f'height:{ht_loss.avg:.4f}, depth:{dp_loss.avg:.4f}, '
                       f'total:{losses.avg:.4f}')
                 writer.add_scalar('train/loss', loss, counter)
@@ -284,7 +275,7 @@ def train(gpuid=0,
             model.eval()
             mname = os.path.join(logdir, "model-{}.pth".format(epoch))
             print('saving', mname)
-            checkpoint = {'model_state_dict': model.state_dict(),
+            checkpoint = {'model_state_dict': model.module.state_dict(),
                           'opt_state_dict': opt.state_dict(),
                           'epoch': epoch}
             torch.save(checkpoint, mname)
