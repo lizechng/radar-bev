@@ -89,6 +89,7 @@ class radar_preprocessing(object):
 
     def prepare_dataset(self):
         self.get_paths()
+        # print(self.val_paths['img'], len(self.val_paths['img']))
         print('===============================')
         print('img   in training dataset: ', len(self.train_paths['img']))
         print('radar in training dataset: ', len(self.train_paths['radar']))

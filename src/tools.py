@@ -15,9 +15,9 @@ from functools import reduce
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
-from nuscenes.utils.data_classes import LidarPointCloud
-from nuscenes.utils.geometry_utils import transform_matrix
-from nuscenes.map_expansion.map_api import NuScenesMap
+# from nuscenes.utils.data_classes import LidarPointCloud
+# from nuscenes.utils.geometry_utils import transform_matrix
+# from nuscenes.map_expansion.map_api import NuScenesMap
 
 
 def get_lidar_data(nusc, sample_rec, nsweeps, min_distance):

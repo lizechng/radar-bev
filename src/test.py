@@ -11,12 +11,12 @@ import numpy as np
 import cv2
 from PIL import Image
 from .models import compile_model
-from .data import compile_data
+
 from .tools import SimpleLoss, get_batch_iou, get_val_info
 
 from .dataloader import get_loader
 from .radar_loader import radar_preprocessing
-
+from .train import MyCrossEntropyLoss2d
 
 def model_test(gpuid=0,
 
@@ -64,7 +64,7 @@ def model_test(gpuid=0,
         'crop_h': 600,
         'crop_w': 300,
         'no_aug': None,
-        'data_path': './dataset',
+        'data_path': './dataset_2000',
         'rotate': False,
         'flip': None,  # if 'hflip', the inverse-projection will ?
         'batch_size': bsz,
@@ -80,31 +80,24 @@ def model_test(gpuid=0,
     device = torch.device('cpu') if gpuid < 0 else torch.device(f'cuda:{gpuid}')
     model = compile_model(grid_conf, data_aug_conf, outC=2)  # confidence + height
     #######################################
+    model_path = './exp/20230215_datax2000/model-80_0.001.pth'
     if multi_gpu:
+        state_dict = torch.load(model_path)['model_state_dict']
+        model.load_state_dict(state_dict)
         model = torch.nn.DataParallel(model).cuda(gpuid)
     else:
+        state_dict = torch.load(model_path)['model_state_dict']
+        model.load_state_dict(state_dict)
+        print(model)
         model = model.cuda(gpuid)
 
     dataset = radar_preprocessing(args['data_path'])
     dataset.prepare_dataset()
     trainloader, validloader = get_loader(args, dataset)
 
-    print('loading')
-    from collections import OrderedDict
-    state_dict = torch.load('./exp/mini/model-300.pth')['model_state_dict']
-    if multi_gpu:
-        model.load_state_dict(state_dict)
-    else:
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():  # k为module.xxx.weight, v为权重
-            name = k[7:]  # 截取`module.`后面的xxx.weight
-            new_state_dict[name] = v
-        # load params
-        model.load_state_dict(new_state_dict)
-
-    model.eval()
+    model.train()
     with torch.no_grad():
-        for batchi, (imgs, radars, lidars, lidHts, depths, fovs, objs, calibs) in enumerate(trainloader):
+        for batchi, (imgs, radars, lidars, lidHts, depths, fovs, objs, calibs) in enumerate(validloader):
             print(f'#####{batchi:4d}')
             preds, _ = model(imgs.to(device),
                              radars.to(device),
@@ -112,7 +105,10 @@ def model_test(gpuid=0,
                              )
             lidars = lidars.to(device)
             masks = fovs.to(device)
-            print(torch.max(preds), torch.min(preds))
+            l_bg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], fovs[:, 0])
+            l_fg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], objs[:, 0])
+            print(f'background: {l_bg:.4f}, foreground: {l_fg:.4f}')
+            # print(torch.max(preds), torch.min(preds))
             p = preds[0, 0:2, :, :].argmax(dim=0).detach().cpu().numpy()
             d = preds[0, 2, :, :].detach().cpu().numpy() * 40
             m = masks[0, 0, :, :].detach().cpu().numpy()
@@ -124,6 +120,7 @@ def model_test(gpuid=0,
             p1 = np.uint8((1 - p) * 255).T[::-1, :]
             t1 = np.uint8((1 - t) * 255).T[::-1, :]
             im = np.vstack([p1, t1])
-            # Image.fromarray(im).save(f'results/dataset/{batchi}.png')
+            # Image.fromarray(im).save(f'results/20230214_dataxinter/train/{batchi}.png')
             Image.fromarray(im).show()
             break
+

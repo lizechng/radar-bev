@@ -12,12 +12,12 @@ import os
 from collections import OrderedDict
 
 from .models import compile_model
-from .data import compile_data
 from .tools import SimpleLoss, get_batch_iou, get_val_info
 
 from .dataloader import get_loader
 from .radar_loader import radar_preprocessing
 from .gan import Discriminator
+
 
 class CrossEntropyLoss2d(torch.nn.Module):
     def __init__(self, weight=None):
@@ -138,7 +138,7 @@ def train(gpuid=0,
         'crop_h': 600,
         'crop_w': 300,
         'no_aug': None,
-        'data_path': './dataset',
+        'data_path': './dataset_2000',
         'rotate': False,
         'flip': None,  # if 'hflip', the inverse-projection will ?
         'batch_size': bsz,
@@ -150,60 +150,66 @@ def train(gpuid=0,
 
     torch.backends.cudnn.benchmark = True
     multi_gpu = True
-    pre_train = True
+    pre_train = False
+    pre_train_path = 'exp/20230209_datax1000/model-550_1.4699999999999998e-05.pth'
     resume = False
-
+    resume_path = 'exp/20230209_datax1000/model-550_1.4699999999999998e-05.pth'
     device = torch.device('cpu') if gpuid < 0 else torch.device(f'cuda:{gpuid}')
-    model = compile_model(grid_conf, data_aug_conf, outC=2)  # confidence + height
-    #######################################
-    if multi_gpu:
-        model = torch.nn.DataParallel(model).cuda(gpuid)
-    else:
-        model = model.cuda(gpuid)
-    #######################################
+    model = compile_model(grid_conf, data_aug_conf, outC=3).cuda()  # confidence + height
+
 
     dataset = radar_preprocessing(args['data_path'])
     dataset.prepare_dataset()
     trainloader, validloader = get_loader(args, dataset)
 
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-
-    lr_policy = 'plateau'
-    if lr_policy == 'plateau':
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min',
-                                                               factor=0.7,
-                                                               threshold=0.00001,
-                                                               patience=30)
-
-    if lr_policy == 'step':
-        scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=100, gamma=0.5)
+    #
+    # lr_policy = 'plateau'
+    # if lr_policy == 'plateau':
+    #     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min',
+    #                                                            factor=0.7,
+    #                                                            threshold=0.000001,
+    #                                                            patience=13)
+    #
+    # if lr_policy == 'step':
+    #     scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=100, gamma=0.5)
 
     epoch = 0
     if pre_train:
-        state_dict = torch.load('./exp/pretrain.pt')
+        checkpoint = torch.load(pre_train_path)
+        state_dict = checkpoint['model_state_dict']
         if multi_gpu:
             model.load_state_dict(state_dict)
+            model = torch.nn.DataParallel(model).cuda(gpuid)
         else:
-            new_state_dict = OrderedDict()
-            for k, v in state_dict.items():  # k为module.xxx.weight, v为权重
-                name = k[7:]  # 截取`module.`后面的xxx.weight
-                new_state_dict[name] = v
-            # load params
-            model.load_state_dict(new_state_dict)
-    if resume:
-        checkpoint = torch.load('./exp/fine_tune_background/model-300.pth')
+            model.load_state_dict(state_dict)
+            model = model.cuda(gpuid)
+    elif resume:
+        checkpoint = torch.load(resume_path)
         state_dict = checkpoint['model_state_dict']
         opt.load_state_dict(checkpoint['opt_state_dict'])
         epoch = checkpoint['epoch']
         if multi_gpu:
             model.load_state_dict(state_dict)
+            model = torch.nn.DataParallel(model).cuda(gpuid)
         else:
-            new_state_dict = OrderedDict()
-            for k, v in state_dict.items():  # k为module.xxx.weight, v为权重
-                name = k[7:]  # 截取`module.`后面的xxx.weight
-                new_state_dict[name] = v
-            # load params
-            model.load_state_dict(new_state_dict)
+            model.load_state_dict(state_dict)
+            model = model.cuda(gpuid)
+    else:
+        if multi_gpu:
+            model = torch.nn.DataParallel(model).cuda(gpuid)
+        else:
+            model = model.cuda(gpuid)
+
+    lr_policy = 'plateau'
+    if lr_policy == 'plateau':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min',
+                                                               factor=0.7,
+                                                               threshold=0.000001,
+                                                               patience=30)
+
+    if lr_policy == 'step':
+        scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=100, gamma=0.5)
 
     loss_bce = torch.nn.BCEWithLogitsLoss().cuda(gpuid)
     l_mse = MSELoss().cuda(gpuid)
@@ -239,8 +245,12 @@ def train(gpuid=0,
             l_fg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], objs[:, 0])
             l_ht = l_mse(preds[:, 2:3] * fovs, lidHts * fovs)
             l_dp = l_mse(dis[:, 0:1] / 75, depths)
+            # argmax does not have a grad_fn
+            # -> softmax
+            pred_bg = torch.nn.functional.softmax(preds[:, 0:2], dim=1)
+            l_bg2 = l_mse((pred_bg[:, 1:2] - pred_bg[:, 0:1]) * fovs, lidars * fovs)
             # loss = l_bg + l_fg + l_ht + l_dp
-            loss = l_bg
+            loss = l_bg + l_fg + l_ht
             # AverageMeter()
             bg_loss.update(l_bg.item(), imgs.size(0))
             fg_loss.update(l_fg.item(), imgs.size(0))
@@ -280,13 +290,19 @@ def train(gpuid=0,
         writer.add_scalar('train/epoch', epoch, counter)
         writer.add_scalar('train/step_time', t1 - t0, counter)
 
-        if epoch % 50 == 0 and epoch > 0:
+        if epoch % 20 == 0 and epoch > 0:
             model.eval()
-            mname = os.path.join(logdir, "model-{}.pth".format(epoch))
+            print(opt)
+            mname = os.path.join(logdir, "model-{}_{}.pth".format(epoch, opt.param_groups[0]['lr']))
             print('saving', mname)
-            checkpoint = {'model_state_dict': model.state_dict(),
-                          'opt_state_dict': opt.state_dict(),
-                          'epoch': epoch}
+            if multi_gpu:
+                checkpoint = {'model_state_dict': model.module.state_dict(),
+                              'opt_state_dict': opt.state_dict(),
+                              'epoch': epoch}
+            else:
+                checkpoint = {'model_state_dict': model.state_dict(),
+                              'opt_state_dict': opt.state_dict(),
+                              'epoch': epoch}
             torch.save(checkpoint, mname)
             model.train()
 

@@ -12,7 +12,6 @@ import os
 from collections import OrderedDict
 
 from .models import compile_model
-from .data import compile_data
 from .tools import SimpleLoss, get_batch_iou, get_val_info
 
 from .dataloader import get_loader
