@@ -138,7 +138,7 @@ def train(gpuid=0,
         'crop_h': 600,
         'crop_w': 300,
         'no_aug': None,
-        'data_path': './dataset_2000',
+        'data_path': './mini1',
         'rotate': False,
         'flip': None,  # if 'hflip', the inverse-projection will ?
         'batch_size': bsz,
@@ -151,11 +151,11 @@ def train(gpuid=0,
     torch.backends.cudnn.benchmark = True
     multi_gpu = True
     pre_train = False
-    pre_train_path = 'exp/20230209_datax1000/model-550_1.4699999999999998e-05.pth'
+    pre_train_path = 'exp/20230215_datax2000/model-80_0.001.pth'
     resume = False
-    resume_path = 'exp/20230209_datax1000/model-550_1.4699999999999998e-05.pth'
+    resume_path = 'exp/20230306_datax2000_height/model-120.pth'
     device = torch.device('cpu') if gpuid < 0 else torch.device(f'cuda:{gpuid}')
-    model = compile_model(grid_conf, data_aug_conf, outC=3).cuda()  # confidence + height
+    model = compile_model(grid_conf, data_aug_conf, outC=2).cuda()  # confidence + height
 
 
     dataset = radar_preprocessing(args['data_path'])
@@ -243,7 +243,7 @@ def train(gpuid=0,
 
             l_bg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], fovs[:, 0])
             l_fg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], objs[:, 0])
-            l_ht = l_mse(preds[:, 2:3] * fovs, lidHts * fovs)
+            l_ht = l_mse(preds[:, 2:3] * fovs, lidHts * fovs) * 20
             l_dp = l_mse(dis[:, 0:1] / 75, depths)
             # argmax does not have a grad_fn
             # -> softmax
@@ -290,10 +290,10 @@ def train(gpuid=0,
         writer.add_scalar('train/epoch', epoch, counter)
         writer.add_scalar('train/step_time', t1 - t0, counter)
 
-        if epoch % 20 == 0 and epoch > 0:
+        if epoch % 10 == 0 and epoch > 0:
             model.eval()
             print(opt)
-            mname = os.path.join(logdir, "model-{}_{}.pth".format(epoch, opt.param_groups[0]['lr']))
+            mname = os.path.join(logdir, "model-{}.pth".format(epoch))
             print('saving', mname)
             if multi_gpu:
                 checkpoint = {'model_state_dict': model.module.state_dict(),

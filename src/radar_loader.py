@@ -41,11 +41,11 @@ class radar_preprocessing(object):
                 self.train_paths['lidHt'].extend(sorted([os.path.join(root, file) for file in files
                                                          if re.search('lidHt', root)
                                                          and re.search('train', root)
-                                                         and re.search('png', file)]))
+                                                         and re.search('tiff', file)]))
                 self.val_paths['lidHt'].extend(sorted([os.path.join(root, file) for file in files
                                                        if re.search('lidHt', root)
                                                        and re.search('val', root)
-                                                       and re.search('png', file)]))
+                                                       and re.search('tiff', file)]))
                 self.train_paths['fov_mask'].extend(sorted([os.path.join(root, file) for file in files
                                                             if re.search('fov_mask', root)
                                                             and re.search('train', root)

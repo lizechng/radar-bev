@@ -4,4 +4,4 @@ Licensed under the NVIDIA Source Code License. See LICENSE at https://github.com
 Authors: Jonah Philion and Sanja Fidler
 """
 
-from . import train, test, train_gan
+from . import train, test, train_gan, test_knn
