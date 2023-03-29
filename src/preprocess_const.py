@@ -53,31 +53,12 @@ def taylor(rin):
         for px in np.arange(l, hm_w - r, (l + r)//2):
             # Peak at Center
             if hm[py, px] == np.max(hm[py - 2:py + 3, px - 2:px + 3]) and hm[py, px] >= 40:
-                dx = 0.5 * (hm[py, px + 1] - hm[py, px - 1])
-                dy = 0.5 * (hm[py + 1, px] - hm[py - 1, px])
-                dxx = 0.25 * (hm[py, px + 2] - 2 * hm[py, px] + hm[py, px - 2])
-                dxy = 0.25 * (hm[py + 1, px + 1] - hm[py - 1, px + 1] - hm[py + 1, px - 1] \
-                              + hm[py - 1, px - 1])
-                dyy = 0.25 * (hm[py + 2 * 1, px] - 2 * hm[py, px] + hm[py - 2 * 1, px])
-
-                # hessian_value = (dxx + dyy + 2 * dxy) / 4
-                # if hessian_value > np.floor(150 / 15.91 / hm[py, px]):
-                #     hessian_value = np.floor(150 / 15.91 / hm[py, px])
-                query = np.zeros((l + r, l + r))
+                # query = np.zeros((l + r, l + r))
                 template = hm[py - l:py + r, px - l:px + r]
                 query = (template * kernel) / np.max(template * kernel) * 120
                 hm[py - l:py + r, px - l:px + r] = np.where(query < 40, template, query)
 
-    coord = coord.reshape(-1, 2)
-    rin = rin.reshape(-1)
-    # Check whether the coordinates match the values
-    kept = (coord[:, 0] >= 0) & (coord[:, 0] < hm_w) \
-           & (coord[:, 1] >= 0) & (coord[:, 1] < hm_h)
-    coord = coord[kept]
-    rin = rin[kept]
-    f = np.zeros((hm_h, hm_w), dtype=np.float32)
-    f[coord[:, 1], coord[:, 0]] = rin
-    return f
+    return hm
 
 
 if __name__ == '__main__':
