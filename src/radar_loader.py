@@ -23,11 +23,11 @@ class radar_preprocessing(object):
         for type_set in os.listdir(self.dataset_path):
             for root, dirs, files in os.walk(os.path.join(self.dataset_path, type_set)):
                 self.train_paths['radar'].extend(sorted([os.path.join(root, file) for file in files
-                                                         if re.search('radar', root)
+                                                         if re.search('hessian', root)
                                                          and re.search('train', root)
                                                          and re.search('png', file)]))
                 self.val_paths['radar'].extend(sorted([os.path.join(root, file) for file in files
-                                                       if re.search('radar', root)
+                                                       if re.search('hessian', root)
                                                        and re.search('val', root)
                                                        and re.search('png', file)]))
                 self.train_paths['lidar'].extend(sorted([os.path.join(root, file) for file in files

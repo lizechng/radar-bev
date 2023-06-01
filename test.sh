@@ -1,2 +1,3 @@
-export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
-python main.py model_test
+#export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+export CUDA_VISIBLE_DEVICES=2
+python main.py knn_test

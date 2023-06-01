@@ -138,7 +138,7 @@ def train(gpuid=0,
         'crop_h': 600,
         'crop_w': 300,
         'no_aug': None,
-        'data_path': './mini1',
+        'data_path': './dataset_direct',
         'rotate': False,
         'flip': None,  # if 'hflip', the inverse-projection will ?
         'batch_size': bsz,
@@ -290,7 +290,7 @@ def train(gpuid=0,
         writer.add_scalar('train/epoch', epoch, counter)
         writer.add_scalar('train/step_time', t1 - t0, counter)
 
-        if epoch % 10 == 0 and epoch > 0:
+        if epoch % 50 == 0 and epoch > 0:
             model.eval()
             print(opt)
             mname = os.path.join(logdir, "model-{}.pth".format(epoch))

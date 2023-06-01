@@ -62,12 +62,12 @@ def taylor(rin):
 
                 hessian_value = abs(dxx + dyy + 2 * dxy) / 4
 
-                if hessian_value > 255 / 150:
-                    hessian_value = 255 / 150
+                if hessian_value > 150 / 120:
+                    hessian_value = 150 / 120
                 # query = np.zeros((l + r, l + r))
                 template = hm[py - l:py + r, px - l:px + r]
-                query = (template * kernel) / np.max(template * kernel) * 150 * hessian_value
-                hm[py - l:py + r, px - l:px + r] = np.where(query < 30, template, query)
+                query = (template * kernel) / np.max(template * kernel) * 120 * hessian_value
+                hm[py - l:py + r, px - l:px + r] = np.where(query < np.max(template)*0.6, template, query)
 
     return hm
 

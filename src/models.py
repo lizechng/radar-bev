@@ -346,62 +346,62 @@ class LiftSplatShoot(nn.Module):
 
         return dis, x
 
-    def taylor(self, rin):
-        # is Peak?
-        B, C, hm_h, hm_w = rin.shape
-
-        coord = torch.stack((
-            torch.linspace(0, hm_w - 1, hm_w, dtype=torch.long).view(1, hm_w).expand(hm_h, hm_w),
-            torch.linspace(0, hm_h - 1, hm_h, dtype=torch.long).view(hm_h, 1).expand(hm_h, hm_w)
-        ), -1).unsqueeze(0).unsqueeze(0).repeat(B, C, 1, 1, 1).to(rin.device)
-
-        hm = rin.cpu().numpy()
-
-        for i in range(B):
-            for j in range(C):
-                # 5x5 grids
-                for py in np.arange(2, hm_h - 3, 5):
-                    for px in np.arange(2, hm_w - 3, 5):
-                        if hm[i, j, py, px] == np.max(hm[i, j, py - 2:py + 2, px - 2:px + 2]):
-                            dx = 0.5 * (hm[i, j, py, px + 1] - hm[i, j, py, px - 1])
-                            dy = 0.5 * (hm[i, j, py + 1, px] - hm[i, j, py - 1, px])
-                            dxx = 0.25 * (hm[i, j, py, px + 2] - 2 * hm[i, j, py, px] + hm[i, j, py, px - 2])
-                            dxy = 0.25 * (hm[i, j, py + 1, px + 1] - hm[i, j, py - 1, px + 1] - hm[i, j, py + 1, px - 1] \
-                                          + hm[i, j, py - 1, px - 1])
-                            dyy = 0.25 * (hm[i, j, py + 2 * 1, px] - 2 * hm[i, j, py, px] + hm[i, j, py - 2 * 1, px])
-                            derivative = np.matrix([[dx], [dy]])
-                            hessian = np.matrix([[dxx, dxy], [dxy, dyy]])
-                            if dxx * dyy - dxy ** 2 != 0:
-                                hessianinv = hessian.I
-                                offset = -hessianinv * derivative
-                                # print(max(offset))
-                                # if max(offset) >= min(hm_h, hm_w):
-                                #     continue
-                                offset = np.squeeze(np.array(offset.T), axis=0)
-                                # print(offset)
-                                # The range is limited in [-2, 2]
-                                offset = np.where(offset >= 2, 2, offset)
-                                offset = np.where(offset <= -2, -2, offset)
-                                offset = np.round(offset)
-
-                                coord[i, j, py, px] = coord[i, j, py, px] + torch.tensor(offset).to(rin.device)
-                        else:
-                            pass
-
-        coord = coord.view(-1, 2)
-        rin = rin.view(-1)
-        # Check whether the coordinates match the values
-        kept = (coord[:, 0] >= 0) & (coord[:, 0] < hm_w) \
-               & (coord[:, 1] >= 0) & (coord[:, 1] < hm_h)
-        coord = coord[kept]
-        rin = rin[kept]
-        f = torch.zeros((B, C, hm_h, hm_w), device=rin.device)
-        f[:, :, coord[:, 1], coord[:, 0]] = rin
-        return f
+    # def taylor(self, rin):
+    #     # is Peak?
+    #     B, C, hm_h, hm_w = rin.shape
+    #
+    #     coord = torch.stack((
+    #         torch.linspace(0, hm_w - 1, hm_w, dtype=torch.long).view(1, hm_w).expand(hm_h, hm_w),
+    #         torch.linspace(0, hm_h - 1, hm_h, dtype=torch.long).view(hm_h, 1).expand(hm_h, hm_w)
+    #     ), -1).unsqueeze(0).unsqueeze(0).repeat(B, C, 1, 1, 1).to(rin.device)
+    #
+    #     hm = rin.cpu().numpy()
+    #
+    #     for i in range(B):
+    #         for j in range(C):
+    #             # 5x5 grids
+    #             for py in np.arange(2, hm_h - 3, 5):
+    #                 for px in np.arange(2, hm_w - 3, 5):
+    #                     if hm[i, j, py, px] == np.max(hm[i, j, py - 2:py + 2, px - 2:px + 2]):
+    #                         dx = 0.5 * (hm[i, j, py, px + 1] - hm[i, j, py, px - 1])
+    #                         dy = 0.5 * (hm[i, j, py + 1, px] - hm[i, j, py - 1, px])
+    #                         dxx = 0.25 * (hm[i, j, py, px + 2] - 2 * hm[i, j, py, px] + hm[i, j, py, px - 2])
+    #                         dxy = 0.25 * (hm[i, j, py + 1, px + 1] - hm[i, j, py - 1, px + 1] - hm[i, j, py + 1, px - 1] \
+    #                                       + hm[i, j, py - 1, px - 1])
+    #                         dyy = 0.25 * (hm[i, j, py + 2 * 1, px] - 2 * hm[i, j, py, px] + hm[i, j, py - 2 * 1, px])
+    #                         derivative = np.matrix([[dx], [dy]])
+    #                         hessian = np.matrix([[dxx, dxy], [dxy, dyy]])
+    #                         if dxx * dyy - dxy ** 2 != 0:
+    #                             hessianinv = hessian.I
+    #                             offset = -hessianinv * derivative
+    #                             # print(max(offset))
+    #                             # if max(offset) >= min(hm_h, hm_w):
+    #                             #     continue
+    #                             offset = np.squeeze(np.array(offset.T), axis=0)
+    #                             # print(offset)
+    #                             # The range is limited in [-2, 2]
+    #                             offset = np.where(offset >= 2, 2, offset)
+    #                             offset = np.where(offset <= -2, -2, offset)
+    #                             offset = np.round(offset)
+    #
+    #                             coord[i, j, py, px] = coord[i, j, py, px] + torch.tensor(offset).to(rin.device)
+    #                     else:
+    #                         pass
+    #
+    #     coord = coord.view(-1, 2)
+    #     rin = rin.view(-1)
+    #     # Check whether the coordinates match the values
+    #     kept = (coord[:, 0] >= 0) & (coord[:, 0] < hm_w) \
+    #            & (coord[:, 1] >= 0) & (coord[:, 1] < hm_h)
+    #     coord = coord[kept]
+    #     rin = rin[kept]
+    #     f = torch.zeros((B, C, hm_h, hm_w), device=rin.device)
+    #     f[:, :, coord[:, 1], coord[:, 0]] = rin
+    #     return f
 
     def forward(self, x, radars, calibs, lidars=None, is_training=None):
         dis, cout = self.get_voxels(x, calibs)
-        radars = self.taylor(radars)
+        # radars = self.taylor(radars)
         rinf = self.radencode(torch.cat([cout, radars], 1))  # 64 channels + affinity matrix
 
         feat = rinf[:, :self.radC, :, :]
@@ -416,7 +416,19 @@ class LiftSplatShoot(nn.Module):
 
         x = torch.cat([cam, feat], 1)
         x = self.bevencode(x)
-
+        # import matplotlib.pyplot as plt
+        # print(cam.shape)
+        # cam_vis = cam[0, 0].detach().cpu().numpy()
+        # cam_vis = np.sum(cam_vis, axis=0)
+        # np.save('m2_after.npy', cam_vis)
+        # raise NotImplemented
+        # plt.imshow(cam_vis, cmap='jet')
+        # # plt.colorbar()
+        # plt.axis('off')
+        # # Save the image
+        # # plt.savefig('radar_RAM.png', dpi=300)
+        # plt.show()
+        # raise NotImplemented
         return x, dis
 
 

@@ -194,7 +194,7 @@ def knn_test(gpuid=0,
         'crop_h': 600,
         'crop_w': 300,
         'no_aug': None,
-        'data_path': './mini1',
+        'data_path': './dataset_direct',
         'rotate': False,
         'flip': None,  # if 'hflip', the inverse-projection will ?
         'batch_size': bsz,
@@ -210,8 +210,9 @@ def knn_test(gpuid=0,
     device = torch.device('cpu') if gpuid < 0 else torch.device(f'cuda:{gpuid}')
     model = compile_model(grid_conf, data_aug_conf, outC=2)  # confidence + height
     #######################################
-    model_path = './exp/test/model-330.pth'
-    # model_path = './exp/20230209_datax1000/model-600_1.4699999999999998e-05.pth'
+    eph = 450
+    # model_path = './exp/dataset_direct/model-450.pth'
+    model_path = f'./exp/dataset_direct/model-{eph}.pth'
     if multi_gpu:
         state_dict = torch.load(model_path)['model_state_dict']
         model.load_state_dict(state_dict)
@@ -231,15 +232,20 @@ def knn_test(gpuid=0,
     with torch.no_grad():
         for batchi, (imgs, radars, lidars, lidHts, depths, fovs, objs, calibs) in enumerate(trainloader):
             print(f'#####{batchi:4d}')
+            pts_name = dataset.train_paths['img'][batchi].split('/')[-1][:-4]
+            if not pts_name == '20211025_2_group0001_frame0100_1635151447_961':
+                continue
+            print(pts_name)
+
             preds, _ = model(imgs.to(device),
                              radars.to(device),
                              calibs.to(device)
                              )
             lidars = lidars.to(device)
             masks = fovs.to(device)
-            l_bg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], fovs[:, 0])
-            l_fg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], objs[:, 0])
-            print(f'background: {l_bg:.4f}, foreground: {l_fg:.4f}')
+            # l_bg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], fovs[:, 0])
+            # l_fg = MyCrossEntropyLoss2d(preds[:, 0:2], lidars[:, 0], objs[:, 0])
+            # print(f'background: {l_bg:.4f}, foreground: {l_fg:.4f}')
             # print(torch.max(preds), torch.min(preds))
             p = preds[0, 0:2, :, :].argmax(dim=0).detach().cpu().numpy()
             d = preds[0, 2, :, :].detach().cpu().numpy() * 40
@@ -254,23 +260,26 @@ def knn_test(gpuid=0,
             ld = ld * m
 
             # TI Radar Points
-            pts = read_pcd('/media/personal_data/lizc/2023/radar-bev/ti.pcd')
+            pts = np.load(f'/media/personal_data/lizc/2023/radar-bev/ti/{pts_name}.npy')
             pts = pts[np.argsort(pts[:, 1])[::-1], :]
             calibs = calibs[0, 0, :, :].detach().cpu().numpy()
             # print(calibs, inv(calibs))
             # raise NotImplemented
             ti_depth = pts2camera(pts[:, :3], inv(calibs)[:3, :])
             # Image.fromarray(np.uint8(ti_depth*255)).show()
+
             # PointCloud Visualization
             pc_list = []
             # Use GT
             # p = l
-            d = ld
+            # d = ld
 
             for i in range(p.shape[0]):
                 for j in range(p.shape[1]):
                     if p[i, j] == 1:
                         # x, y, z
+                        if d[i, j] == 0:
+                            continue
                         pc_list.append([i / 4 - 75, j / 4, d[i, j] - 10])
             pred_pts = np.asarray(pc_list)
             pred_pts = pred_pts[np.argsort(pred_pts[:, 1])[::-1], :]
@@ -278,9 +287,13 @@ def knn_test(gpuid=0,
 
 
             # KNN Graph
-            knn_pts = GDC(pred_depth, ti_depth, calibs)
+            # knn_pts = GDC(pred_depth, ti_depth, calibs)
 
-
+            print(pred_pts.shape)
+            # np.save(f'/media/personal_data/lizc/2023/radar-bev/paper_figure/pts/pred_h_knn/{pts_name}.npy', knn_pts)
+            np.save(f'/media/personal_data/lizc/2023/radar-bev/paper_figure/landmark_pts/{eph}.npy', pred_pts)
+            break
+            # raise NotImplemented
             # Draw KNN-Points
             # mlab.points3d(knn_pts[:, 0], knn_pts[:, 1], knn_pts[:, 2],
             #               # np.sqrt(pred_pts[:, 0] ** 2 + pred_pts[:, 1] ** 2),
@@ -344,4 +357,4 @@ def knn_test(gpuid=0,
             im = np.vstack([p1, t1])
             Image.fromarray(im).show()
             print('height range: ', np.min(d), np.max(d))
-            # break
+            break
